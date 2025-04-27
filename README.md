@@ -68,6 +68,20 @@ The `activation_comparison.py` script compares different activation functions in
 
 This comparison is done for both MLP and CNN models to determine which activation function yields the best accuracy.
 
+## Test Results and Visualizations
+
+### Confusion Matrix
+
+![Confusion Matrix](confusion_matrix.png)
+
+The confusion matrix shows the performance of our best model on the test dataset. It displays the number of correct and incorrect predictions for each instrument class, helping to identify where the model excels and where it struggles.
+
+### CNN Training History
+
+![CNN Training History](cnn_training_history.png)
+
+This graph shows the training and validation accuracy/loss over epochs during the CNN model training process, demonstrating how the model learns and improves over time.
+
 ## Usage
 
 ### Training Models
