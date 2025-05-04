@@ -59,13 +59,13 @@ The training process and evaluation generate several output files saved in the `
 
 ### Confusion Matrix
 
-![Confusion Matrix](results/confusion_matrix.png)
+![Confusion Matrix](confusion_matrix.png)
 
 Shows the performance of the best CNN model on the test dataset, detailing correct and incorrect predictions per class.
 
 ### CNN Training History
 
-![CNN Training History](results/cnn_training_history.png)
+![CNN Training History](cnn_training_history.png)
 
 Plots the training and validation accuracy/loss over epochs for the CNN model.
 
