@@ -1,19 +1,24 @@
-# Ignore training and test data directories
-Train_submission/
-Test_submission/
+# Virtual Environment
+env/
 
-# Ignore model files
+# Data (Raw audio files)
+# Note: Adjust if metadata should also be ignored
+data/raw/Test_submission/
+data/raw/Train_submission/
+
+# Model Files and Results
+results/
 *.h5
 *.pkl
 
-
-# Python cache files
+# Python cache & compiled files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
+
+# Python build/packaging artifacts
 build/
 develop-eggs/
 dist/
@@ -29,13 +34,8 @@ var/
 .installed.cfg
 *.egg
 
-# Jupyter Notebook
+# Jupyter Notebook Checkpoints
 .ipynb_checkpoints
-
-# Virtual environments
-venv/
-ENV/
-env/
 
 # OS generated files
 .DS_Store
@@ -44,4 +44,4 @@ env/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
