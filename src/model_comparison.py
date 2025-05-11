@@ -37,9 +37,49 @@ def load_transformer_model(model_dir, label_encoder_path):
     """Transformer modelini yükler"""
     label_encoder = joblib.load(label_encoder_path)
     num_labels = len(label_encoder.classes_)
-    transformer_model = AudioTransformerModel(num_labels=num_labels)
-    transformer_model.load_model(model_dir)
-    return transformer_model, label_encoder
+    
+    # Checkpoint dosyasını doğrudan yükleyelim
+    checkpoints_dir = os.path.join(os.path.dirname(model_dir), 'checkpoints')
+    checkpoint_files = [f for f in os.listdir(checkpoints_dir) if f.endswith('.pt')]
+    
+    # En iyi doğruluk skoruna sahip checkpoint'i bul
+    best_checkpoint = None
+    best_accuracy = 0.0
+    
+    for checkpoint_file in checkpoint_files:
+        try:
+            accuracy_str = checkpoint_file.split('_acc_')[1].split('.pt')[0]
+            accuracy = float(accuracy_str)
+            
+            if accuracy > best_accuracy:
+                best_accuracy = accuracy
+                best_checkpoint = checkpoint_file
+        except:
+            continue
+    
+    if best_checkpoint:
+        print(f"En iyi checkpoint: {best_checkpoint} (Doğruluk: {best_accuracy:.4f})")
+        checkpoint_path = os.path.join(checkpoints_dir, best_checkpoint)
+        
+        # Bellek kullanımını azaltmak için
+        torch.cuda.empty_cache()
+        
+        # CPU'ya yüklemek için map_location parametresini belirt
+        device = "cpu"  # GPU bellek sorunlarını önlemek için CPU kullan
+        
+        # Alternatif model oluştur
+        transformer_model = AudioTransformerModel(num_labels=num_labels)
+        transformer_model.device = torch.device(device)
+        
+        # Checkpoint'ten modeli yükle
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        transformer_model.model.load_state_dict(checkpoint['model_state_dict'])
+        transformer_model.model.to(device)  # Modeli CPU'da tut
+        
+        print(f"Transformer modeli '{checkpoint_path}' konumundan başarıyla yüklendi (Cihaz: {device})")
+        return transformer_model, label_encoder
+    else:
+        raise FileNotFoundError(f"Checkpoint dosyası bulunamadı: {checkpoints_dir}")
 
 def evaluate_cnn_model(model, test_audio_paths, test_labels, label_encoder):
     """CNN modelini değerlendirir"""
@@ -144,7 +184,7 @@ def main():
     # Veri yolları
     base_dir = os.path.dirname(os.path.dirname(__file__))
     test_metadata_path = os.path.join(base_dir, 'data', 'metadata', 'Metadata_Test.csv')
-    test_dir = os.path.join(base_dir, 'data', 'raw', 'Test_submission')
+    test_dir = os.path.join(base_dir, 'data', 'raw', 'Test_submission', 'Test_submission')  # İki seviye klasör
     results_dir = os.path.join(base_dir, 'results')
     cnn_model_path = os.path.join(results_dir, 'best_model_cnn.h5')
     cnn_label_encoder_path = os.path.join(results_dir, 'label_encoder.pkl')

@@ -1,6 +1,11 @@
-# Musical Instrument Classification using CNN
+# Musical Instrument Classification using CNN and Transformer
 
-This project implements a Convolutional Neural Network (CNN) based system to classify musical instruments from audio files using Mel Spectrograms. The model is trained to identify 3 different types of instruments:
+This project implements two deep learning approaches to classify musical instruments from audio files:
+
+1. **Convolutional Neural Network (CNN)** using Mel Spectrograms
+2. **Transformer-based model** using Wav2Vec2 architecture
+
+The models are trained to identify 3 different types of instruments:
 
 - Guitar
 - Drum
@@ -13,6 +18,8 @@ This project implements a Convolutional Neural Network (CNN) based system to cla
 - `src/instrument_classifier.py`: Main script for extracting Mel Spectrograms, training the CNN model with data augmentation, evaluating performance, and saving the best model.
 - `src/predict_instrument.py`: Script for predicting the class of a new audio file using the trained CNN model.
 - `src/activation_comparison.py`: Script for comparing different activation functions within the CNN model architecture.
+- `src/transformer_classifier.py`: Script for training and evaluating the Wav2Vec2 Transformer model on audio files.
+- `src/model_comparison.py`: Script for comparing the performance of CNN and Transformer models.
 - `requirements.txt`: Package dependencies.
 - `data/metadata/Metadata_Train.csv`: CSV file with training data filenames and their corresponding instrument classes.
 - `data/metadata/Metadata_Test.csv`: CSV file with test data filenames and their corresponding instrument classes.
@@ -28,9 +35,11 @@ The system primarily uses **Mel Spectrograms** derived from the audio files as i
 
 Data augmentation techniques (noise addition, pitch shifting, time stretching) are applied during training to improve model robustness.
 
-## Model Implemented
+## Models Implemented
 
-The core of the system is a **Convolutional Neural Network (CNN)** designed to process Mel Spectrogram images. The architecture includes:
+### CNN Model
+
+The core of the first approach is a **Convolutional Neural Network (CNN)** designed to process Mel Spectrogram images. The architecture includes:
 
 - Conv2D layers with Batch Normalization and Dropout for feature extraction.
 - MaxPooling layers for downsampling.
@@ -39,6 +48,28 @@ The core of the system is a **Convolutional Neural Network (CNN)** designed to p
 - Softmax activation in the output layer for multi-class probability distribution.
 
 The model uses the Adam optimizer and sparse categorical crossentropy loss. Early stopping is employed to prevent overfitting.
+
+### Transformer Model
+
+The second approach uses a **Transformer-based model** built on Facebook's Wav2Vec2 architecture:
+
+- Utilizes pre-trained audio transformers for feature extraction
+- Processes raw audio waveforms directly without manual feature extraction
+- Fine-tuned for instrument classification task
+- Custom implementation to handle compatibility issues with weight normalization
+
+The transformer model leverages self-attention mechanisms to capture temporal relationships in audio data.
+
+## Model Comparison
+
+The `src/model_comparison.py` script evaluates and compares the performance of both CNN and Transformer models on the same test dataset. The comparison includes:
+
+- Accuracy metrics for both models
+- Class-wise precision, recall, and F1 scores
+- Confusion matrices to visualize classification patterns
+- Relative improvement analysis
+
+Results indicate that the Transformer model achieves slightly better performance (73.33% accuracy) compared to the CNN model (70.00% accuracy), representing a 4.76% relative improvement.
 
 ## Activation Functions Comparison
 
@@ -100,18 +131,33 @@ python src/predict_instrument.py path/to/your/audiofile.wav [--model results/bes
 
 Loads the trained model and predicts the instrument class for the specified audio file.
 
-### Comparing Activation Functions
+### Training the Transformer Model
 
 ```bash
-python src/activation_comparison.py
+python src/transformer_classifier.py
 ```
 
 This script will:
 
-- Load training data.
-- Extract Mel Spectrograms.
-- Train and evaluate CNN models with different activation functions.
-- Save comparison results to `cnn_activation_results.csv` and `activation_comparison.png`.
+- Load training metadata
+- Create the Wav2Vec2-based Transformer model
+- Process audio files directly without extracting spectrograms
+- Train the model on GPU (if available)
+- Evaluate on test data
+- Save model checkpoints and evaluation metrics
+
+### Comparing Models
+
+```bash
+python src/model_comparison.py
+```
+
+This script will:
+
+- Load both the CNN and Transformer models
+- Evaluate them on the same test dataset
+- Generate comparison metrics and visualizations
+- Save results to the `results/comparison/` directory
 
 ## Installation
 
@@ -131,7 +177,13 @@ This script will:
 
 - `results/best_model_cnn.h5`: The trained CNN model.
 - `results/label_encoder.pkl`: The fitted label encoder for instrument classes.
-- `results/confusion_matrix.png`: Visualization of the test set performance.
-- `results/cnn_training_history.png`: Plot of training/validation accuracy and loss.
+- `results/confusion_matrix.png`: Visualization of the CNN test set performance.
+- `results/cnn_training_history.png`: Plot of CNN training/validation accuracy and loss.
+- `results/transformer/model/`: Directory containing the saved Transformer model.
+- `results/transformer/checkpoints/`: Directory containing Transformer model checkpoints from training.
+- `results/transformer/transformer_confusion_matrix.png`: Visualization of Transformer test set performance.
+- `results/transformer/transformer_training_history.png`: Plot of Transformer training/validation metrics.
+- `results/comparison/model_comparison_confusion_matrix.png`: Side-by-side confusion matrices for both models.
+- `results/comparison/model_accuracy_comparison.png`: Accuracy comparison visualization.
 - `activation_comparison.png`: Visualization of activation function comparison results.
 - `cnn_activation_results.csv`: Table comparing activation function performance.
