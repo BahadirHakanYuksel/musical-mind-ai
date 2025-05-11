@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import librosa
 import matplotlib.pyplot as plt
+import soundfile as sf  # Soundfile kütüphanesini ekle - ses dosyalarını okumak için
 from sklearn.preprocessing import LabelEncoder # LabelEncoder'ı tut
 from sklearn.model_selection import train_test_split # train_test_split'i tut
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix # Metrikleri tut
@@ -116,15 +117,29 @@ class AudioFeatureExtractor:
         X = []
         y = []
         
-        
         for i, path in enumerate(audio_paths):
-            # Kullanılmayan özellikleri çıkarmamak için sesi doğrudan burada yükle
             try:
-                audio, sr = librosa.load(path, sr=self.sample_rate, duration=None) # duration=None olarak değiştirerek tüm dosyayı yükle
+                # İlk olarak soundfile ile yüklemeyi dene
+                try:
+                    audio, sr = sf.read(path)
+                except Exception as e:
+                    print(f"Soundfile ile yüklenemedi, librosa deneniyor: {path}")
+                    # Soundfile başarısız olursa librosa ile dene
+                    audio, sr = librosa.load(path, sr=self.sample_rate, duration=self.duration)
+                
+                # Stereo dosyaları mono'ya dönüştür (gerekirse)
+                if len(audio.shape) > 1 and audio.shape[1] > 1:
+                    audio = np.mean(audio, axis=1)
+                
+                # Örnekleme oranını yeniden örnekle (gerekirse)
+                if sr != self.sample_rate:
+                    # resample ile oranı ayarla
+                    audio = librosa.resample(y=audio, orig_sr=sr, target_sr=self.sample_rate)
+                    sr = self.sample_rate
                 
                 # Kırpılmış sesi istenen süreye getir (kısaysa doldur, uzunsa kırp)
                 if len(audio) > self.samples:
-                    audio = audio[:self.samples] # Baştan itibaren DURATION kadar al
+                    audio = audio[:self.samples]  # Baştan itibaren DURATION kadar al
                 elif len(audio) < self.samples:
                     audio = np.pad(audio, (0, self.samples - len(audio)), 'constant')
 
@@ -132,19 +147,19 @@ class AudioFeatureExtractor:
                 if augment:
                     # Gürültü Ekleme (%50 olasılıkla)
                     if np.random.rand() < 0.5:
-                        noise_amp = 0.005 * np.random.uniform() * np.amax(audio) # Gürültü genliğini ayarla
+                        noise_amp = 0.005 * np.random.uniform() * np.amax(audio)  # Gürültü genliğini ayarla
                         audio = audio + noise_amp * np.random.normal(size=audio.shape[0])
                     
                     # Perde Kaydırma (%50 olasılıkla, -2 ile +2 yarım ton arası)
                     if np.random.rand() < 0.5:
-                        n_steps = np.random.randint(-2, 3) # -2, -1, 0, 1, 2
-                        if n_steps != 0: # 0 yarım ton kaydırma anlamsız
+                        n_steps = np.random.randint(-2, 3)  # -2, -1, 0, 1, 2
+                        if n_steps != 0:  # 0 yarım ton kaydırma anlamsız
                             audio = librosa.effects.pitch_shift(y=audio, sr=sr, n_steps=n_steps)
                     
                     # Zaman Uzatma (%50 olasılıkla, 0.9x ile 1.1x arası hız)
                     if np.random.rand() < 0.5:
                         rate = np.random.uniform(0.9, 1.1)
-                        if rate != 1.0: # 1.0 hızında uzatma anlamsız
+                        if rate != 1.0:  # 1.0 hızında uzatma anlamsız
                             audio = librosa.effects.time_stretch(y=audio, rate=rate)
                             # Zaman uzatma sesin uzunluğunu değiştirir, tekrar kırp/doldur
                             if len(audio) > self.samples:
@@ -152,36 +167,51 @@ class AudioFeatureExtractor:
                             elif len(audio) < self.samples:
                                 audio = np.pad(audio, (0, self.samples - len(audio)), 'constant')
                 
-                mel_spec = librosa.feature.melspectrogram(y=audio, sr=sr, n_mels=self.n_mels, n_fft=self.n_fft, hop_length=self.hop_length)
-                mel_spec_db = librosa.power_to_db(mel_spec) # dB ölçeğine dönüştür
+                # Mel spektrogramını hesapla
+                mel_spec = librosa.feature.melspectrogram(
+                    y=audio, 
+                    sr=sr, 
+                    n_mels=self.n_mels, 
+                    n_fft=self.n_fft, 
+                    hop_length=self.hop_length
+                )
+                mel_spec_db = librosa.power_to_db(mel_spec)  # dB ölçeğine dönüştür
                 
-                # Mel spektrogramının beklenen şekle sahip olduğundan emin ol (özellikle zaman uzatmadan sonra)
-                # Zaman uzatma hop_length'e bağlı olarak zaman adımı sayısını değiştirebilir.
-                # Sabit bir zaman boyutu sağlamak için ya spektrogramı kırp/doldur ya da
-                # librosa yüklemesinde sabit süre kullan (zaten yapılıyor).
-                # Ancak time_stretch sonrası audio uzunluğu değiştiği için mel_spec boyutu da değişebilir.
-                # Bu yüzden mel_spec'i de sabit boyuta getirelim.
+                # Mel spektrogramının beklenen şekle sahip olduğundan emin ol
                 expected_time_steps = int(np.ceil(self.samples / self.hop_length))
                 if mel_spec_db.shape[1] < expected_time_steps:
-                    mel_spec_db = np.pad(mel_spec_db, ((0, 0), (0, expected_time_steps - mel_spec_db.shape[1])), mode='constant', constant_values=-80) # Sessizlikle doldur (-80 dB)
+                    mel_spec_db = np.pad(
+                        mel_spec_db, 
+                        ((0, 0), (0, expected_time_steps - mel_spec_db.shape[1])), 
+                        mode='constant', 
+                        constant_values=-80  # Sessizlikle doldur (-80 dB)
+                    )
                 elif mel_spec_db.shape[1] > expected_time_steps:
                     mel_spec_db = mel_spec_db[:, :expected_time_steps]
 
                 X.append(mel_spec_db)
                 
-                if labels is not None:
+                if labels is not None and i < len(labels):
                     y.append(labels[i])
 
             except Exception as e:
-                 print(f"{path} dosyasından spektrogram çıkarılırken hata oluştu: {e}")
-                 # İsteğe bağlı olarak bu dosyayı atla veya gerekirse bir yer tutucu ekle, burada atlıyoruz
-                 continue # Hata oluşursa bu dosyayı atla
+                print(f"{path} dosyasından spektrogram çıkarılırken hata oluştu: {e}")
+                continue  # Hata oluşursa bu dosyayı atla
 
             # İlerlemeyi yazdır
             if (i + 1) % 100 == 0 or i == len(audio_paths) - 1:
-                print(f"Spektrogramlar için {i + 1}/{len(audio_paths)} dosya işlendi (Augment: {augment})") # Augment durumunu göster
+                print(f"Spektrogramlar için {i + 1}/{len(audio_paths)} dosya işlendi (Augment: {augment})")
         
-        return np.array(X), np.array(y) if labels is not None else None
+        if not X:  # Eğer boş liste ise
+            print("Hiçbir spektrogram çıkarılamadı!")
+            return np.array([]), np.array([]) if labels is not None else np.array([])
+            
+        # Dizilerin boyutlarını yazdır
+        X_array = np.array(X)
+        y_array = np.array(y) if labels is not None else None
+        print(f"X şekli: {X_array.shape}, y şekli: {y_array.shape if y_array is not None else None}")
+        
+        return X_array, y_array
 
 # Veri hazırlama ve özellik çıkarma
 def prepare_data(train_metadata_path, train_dir):
@@ -209,46 +239,61 @@ def train_cnn(X_train, y_train, X_val, y_val, num_classes, results_dir): # resul
     """Mel spektrogramları üzerinde bir CNN modeli eğitir."""
     print("\nCNN modeli eğitiliyor...")
     
-    # CNN girişi için veriyi yeniden şekillendir (channels_last formatı varsayılarak)
-    X_train = X_train[..., np.newaxis] # Kanal boyutunu ekle
-    X_val = X_val[..., np.newaxis]     # Kanal boyutunu ekle
-    input_shape = X_train.shape[1:] # Şekil: (n_mels, zaman_adımları, 1)
+    # Girdi şeklini kontrol et ve debug için yazdır
+    print(f"Model giriş boyutu: {X_train.shape[1:]}")
+    
+    # CNN girişi için veriyi yeniden şekillendir (channels_last formatı)
+    if len(X_train.shape) == 2:
+        # Eğer (örnekler, özellikler) şeklindeyse, yeniden yapılandır
+        print("2D girdi tespit edildi, reshape ediliyor...")
+        n_samples = X_train.shape[0]
+        # Bir spektrogram matrisi (n_mels, time_steps) oluştur
+        n_mels = N_MELS
+        time_steps = int(np.ceil(SAMPLE_RATE * DURATION / HOP_LENGTH))
+        
+        # Veriyi yeniden şekillendir
+        X_train = np.reshape(X_train, (n_samples, n_mels, time_steps))
+        X_val = np.reshape(X_val, (X_val.shape[0], n_mels, time_steps))
+    
+    # Kanal boyutunu ekle
+    X_train = X_train[..., np.newaxis]  # Şimdi (örnekler, n_mels, time_steps, 1) şeklinde
+    X_val = X_val[..., np.newaxis]
+    
+    # Kontrol et ve şekli yazdır
+    print(f"Reshape sonrası giriş boyutu: {X_train.shape[1:]}")
+    
+    input_shape = X_train.shape[1:]  # (n_mels, time_steps, 1)
     
     # Model oluştur - Spektrogramlar için Conv2D kullanılıyor
     model = tf.keras.Sequential([
         # İlk evrişimli blok
-        tf.keras.layers.Conv2D(8, (3, 3), padding='same', activation='relu', input_shape=input_shape, kernel_regularizer=tf.keras.regularizers.l2(0.002)), # L2 artırıldı
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Conv2D(8, (3, 3), padding='same', activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.003)), # L2 artırıldı
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu', input_shape=input_shape),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D((2, 2)),
-        tf.keras.layers.Dropout(0.5), # Dropout artırıldı (0.4 -> 0.5)
+        tf.keras.layers.Dropout(0.25),
         
         # İkinci evrişimli blok
-        #tf.keras.layers.Conv2D(8, (3, 3), padding='same', activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.002)), # L2 artırıldı
-        #tf.keras.layers.BatchNormalization(),
-        #tf.keras.layers.Conv2D(8, (3, 3), padding='same', activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.003)), # L2 artırıldı
-        #tf.keras.layers.BatchNormalization(),
-        #tf.keras.layers.MaxPooling2D((2, 2)),
-        #tf.keras.layers.Dropout(0.6), # Dropout artırıldı (0.5 -> 0.6)
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
         
-        # Üçüncü evrişimli blok (Yorum satırı olarak bırakıldı)
-        #tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0015)), 
-        #tf.keras.layers.BatchNormalization(),
-        #tf.keras.layers.MaxPooling2D((2, 2)),
-        #tf.keras.layers.Dropout(0.5), 
+        # Üçüncü evrişimli blok
+        tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D((2, 2)),
+        tf.keras.layers.Dropout(0.25),
         
         # Düzleştirme ve yoğun katmanlar
         tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(16, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.003)), # L2 artırıldı
+        tf.keras.layers.Dense(256, activation='relu'),
         tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Dropout(0.6), # Dropout artırıldı (0.5 -> 0.6)
-        # İkinci yoğun katman (Yorum satırı olarak bırakıldı)
-        #tf.keras.layers.Dense(4, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0015)), 
-        #tf.keras.layers.BatchNormalization(),
-        #tf.keras.layers.Dropout(0.5), 
-        tf.keras.layers.Dense(num_classes, activation='softmax') # Son katmana genellikle regularizer eklenmez
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
     ])
+    
+    # Modelin özetini göster
+    model.summary()
     
     # Modeli derle
     model.compile(
@@ -260,14 +305,14 @@ def train_cnn(X_train, y_train, X_val, y_val, num_classes, results_dir): # resul
     # Aşırı öğrenmeyi önlemek için erken durdurma
     early_stopping = EarlyStopping(
         monitor='val_loss',
-        patience=10,  # Sabır aynı bırakıldı
+        patience=10,
         restore_best_weights=True
     )
     
     # Modeli eğit
     history = model.fit(
         X_train, y_train,
-        epochs=40,  # Epoch sayısı aynı bırakıldı
+        epochs=40,
         batch_size=32,
         validation_data=(X_val, y_val),
         callbacks=[early_stopping]
@@ -298,10 +343,8 @@ def train_cnn(X_train, y_train, X_val, y_val, num_classes, results_dir): # resul
     plt.legend(['Eğitim', 'Doğrulama'], loc='upper left')
     
     plt.tight_layout()
-    # Grafiği betik konumuna göre kaydet veya tam yolu belirt
-    # results_dir = '../../results' # Bu satırı kaldır
-    os.makedirs(results_dir, exist_ok=True) # results_dir'in var olduğundan emin ol (main'de zaten yapılıyor ama burada da zararı olmaz)
-    plt.savefig(os.path.join(results_dir, 'cnn_training_history.png')) # Geçirilen results_dir'i kullan
+    os.makedirs(results_dir, exist_ok=True)
+    plt.savefig(os.path.join(results_dir, 'cnn_training_history.png'))
     
     return model, accuracy
 
@@ -311,8 +354,8 @@ def main():
     base_dir = os.path.dirname(os.path.dirname(__file__)) # Proje köküne iki seviye yukarı çık
     train_metadata_path = os.path.join(base_dir, 'data', 'metadata', 'Metadata_Train.csv')
     test_metadata_path = os.path.join(base_dir, 'data', 'metadata', 'Metadata_Test.csv')
-    train_dir = os.path.join(base_dir, 'data', 'raw', 'Train_submission', 'Train_submission')
-    test_dir = os.path.join(base_dir, 'data', 'raw', 'Test_submission', 'Test_submission')
+    train_dir = os.path.join(base_dir, 'data', 'raw', 'Train_submission')
+    test_dir = os.path.join(base_dir, 'data', 'raw', 'Test_submission')
     results_dir = os.path.join(base_dir, 'results')
     os.makedirs(results_dir, exist_ok=True) # results dizininin var olduğundan emin ol
 

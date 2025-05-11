@@ -3,8 +3,8 @@ env/
 
 # Data (Raw audio files)
 # Note: Adjust if metadata should also be ignored
-data/raw/Test_submission/
-data/raw/Train_submission/
+# data/raw/Test_submission/
+# data/raw/Train_submission/
 
 # Model Files and Results
 results/
